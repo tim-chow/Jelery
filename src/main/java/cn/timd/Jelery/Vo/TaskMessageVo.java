@@ -7,6 +7,7 @@ public class TaskMessageVo {
     private String taskName;
     private byte[] data;
     private String encoding;
+    private int retryCount = 0;
 
     public String getTaskID() {
         return taskID;
@@ -40,6 +41,14 @@ public class TaskMessageVo {
         this.encoding = encoding;
     }
 
+    public int getRetryCount() {
+        return retryCount;
+    }
+
+    public void setRetryCount(int retryCount) {
+        this.retryCount = retryCount;
+    }
+
     @Override
     public String toString() {
         return "TaskMessageVo{" +
@@ -47,6 +56,7 @@ public class TaskMessageVo {
                 ", taskName='" + taskName + '\'' +
                 ", data=" + Arrays.toString(data) +
                 ", encoding='" + encoding + '\'' +
+                ", retryCount=" + retryCount +
                 '}';
     }
 }

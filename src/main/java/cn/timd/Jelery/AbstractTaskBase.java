@@ -1,15 +1,13 @@
 package cn.timd.Jelery;
 
 import cn.timd.Jelery.Annotation.Task;
-import cn.timd.Jelery.Exception.MessageBrokerException;
-import cn.timd.Jelery.Exception.MessageBrokerTimeoutException;
-import cn.timd.Jelery.Exception.ResultBackendException;
-import cn.timd.Jelery.Exception.ResultBackendTimeoutException;
+import cn.timd.Jelery.Exception.*;
 import cn.timd.Jelery.TaskResult.AsyncTaskResult;
 import cn.timd.Jelery.Utilities.ClassPathPackageScanner;
 import cn.timd.Jelery.Vo.TaskMessageVo;
 import cn.timd.Jelery.Vo.TaskResultVo;
-import com.google.gson.JsonSyntaxException;
+import sun.misc.Signal;
+import sun.misc.SignalHandler;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -38,7 +36,7 @@ public abstract class AbstractTaskBase implements TaskBase {
         AbstractTaskBase.configurable = configurable;
     }
 
-    public static synchronized void markAsExit() {
+    private static synchronized void markAsExit() {
         exit = true;
     }
 
@@ -103,45 +101,61 @@ public abstract class AbstractTaskBase implements TaskBase {
     }
 
     private static void realLogic() {
+        TaskMessageVo taskMessage;
+        AbstractTaskBase task;
+        byte[] result;
         while (!exit && !Thread.currentThread().isInterrupted()) {
-            TaskMessageVo taskMessage;
-            AbstractTaskBase task;
-            byte[] result;
             TaskResultVo taskResult = new TaskResultVo();
 
-            //// TODO: 2017/4/5 message ack and retry
             try {
                 taskMessage = configurable.getMessageBroker().getMessage(
                         configurable.getMessageBrokerReadTimeoutMS());
                 if (taskMessage == null)
                     break;
+                task = taskRecords.get(taskMessage.getTaskName());
             } catch (MessageBrokerTimeoutException ex) {
                 ex.printStackTrace();
                 continue;
             } catch (MessageBrokerException ex) {
                 ex.printStackTrace();
                 continue;
-            } catch (JsonSyntaxException ex) {
+            } catch (MessageFormatException ex) {
                 ex.printStackTrace();
                 continue;
-            }
-
-            try {
-                task = taskRecords.get(taskMessage.getTaskName());
             } catch (NullPointerException ex) {
                 ex.printStackTrace();
                 continue;
             }
 
             try {
+                if (configurable.getMaxRetryCount() != 0 &&
+                        taskMessage.getRetryCount() >= configurable.getMaxRetryCount())
+                    throw new MaxRetryCountReachedException(
+                            "max retry count reached");
                 result = task.run(taskMessage);
                 taskResult.setState("SUCCESS");
                 taskResult.setResult(result);
                 taskResult.setEncoding(taskMessage.getEncoding());
+            } catch (RetryException ex) {
+                taskResult.setState("RETRY");
+                taskResult.setExceptionClassName(ex.getClass().getName());
+                taskResult.setExceptionMessage(ex.getMessage());
             } catch (Throwable ex) {
                 taskResult.setState("FAIL");
                 taskResult.setExceptionClassName(ex.getClass().getName());
                 taskResult.setExceptionMessage(ex.getMessage());
+            }
+
+            if (taskResult.getState().equals("RETRY")) {
+                try {
+                    taskMessage.setRetryCount(taskMessage.getRetryCount() + 1);
+                    configurable.getMessageBroker().sendMessage(taskMessage,
+                            configurable.getMessageBrokerReadTimeoutMS());
+                } catch (MessageBrokerTimeoutException ex) {
+                    ex.printStackTrace();
+                } catch (MessageBrokerException ex) {
+                    ex.printStackTrace();
+                }
             }
 
             try {
@@ -164,6 +178,14 @@ public abstract class AbstractTaskBase implements TaskBase {
     }
 
     public static void run() {
+        // handle signal
+        Signal signal = new Signal("INT");
+        Signal.handle(signal, new SignalHandler() {
+            public void handle(Signal signal) {
+                markAsExit();
+            }
+        });
+
         // // TODO: 2017/4/1 multi-threads supports here
         realLogic();
     }
