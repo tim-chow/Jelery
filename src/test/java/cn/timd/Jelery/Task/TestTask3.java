@@ -8,7 +8,8 @@ import cn.timd.Jelery.Vo.TaskMessageVo;
 @Task
 public class TestTask3 extends AbstractTaskBase {
     public byte[] run(TaskMessageVo taskMessage) throws Throwable {
-        System.out.println("count: " + taskMessage.getRetryCount());
+        System.out.println(getClass().getName());
+        System.out.println("retry count: " + taskMessage.getRetryCount());
         if (taskMessage.getRetryCount() < 1)
             throw new RetryException("retry");
         return null;

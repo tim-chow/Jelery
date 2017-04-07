@@ -11,4 +11,5 @@ public interface Configurable {
 
     MessageBroker getMessageBroker();
     ResultBackend getResultBackend();
+    void close();
 }

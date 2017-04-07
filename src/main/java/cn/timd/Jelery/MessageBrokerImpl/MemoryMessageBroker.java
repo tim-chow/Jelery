@@ -33,4 +33,8 @@ public class MemoryMessageBroker implements MessageBroker {
             throw new MessageFormatException(ex.getMessage());
         }
     }
+
+    public void close() {
+
+    }
 }

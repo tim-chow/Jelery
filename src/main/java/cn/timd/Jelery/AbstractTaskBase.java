@@ -186,7 +186,11 @@ public abstract class AbstractTaskBase implements TaskBase {
             }
         });
 
-        // // TODO: 2017/4/1 multi-threads supports here
-        realLogic();
+        try {
+            // // TODO: 2017/4/1 multi-threads supports here
+            realLogic();
+        } finally {
+            configurable.close();
+        }
     }
 }

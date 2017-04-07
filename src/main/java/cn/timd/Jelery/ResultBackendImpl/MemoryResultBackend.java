@@ -35,4 +35,8 @@ public class MemoryResultBackend implements ResultBackend {
             map.put(taskID, gson.toJson(taskResult).getBytes());
         }
     }
+
+    public void close() {
+
+    }
 }

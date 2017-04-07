@@ -1,6 +1,7 @@
 package cn.timd.Jelery.TaskResult;
 
 import cn.timd.Jelery.Exception.ResultBackendException;
+import cn.timd.Jelery.Exception.ResultFormatException;
 import cn.timd.Jelery.ResultBackend;
 import cn.timd.Jelery.Vo.TaskResultVo;
 
@@ -17,7 +18,7 @@ public class AsyncTaskResult {
         return taskID;
     }
 
-    public TaskResultVo get(int timeoutMS) throws ResultBackendException {
+    public TaskResultVo get(int timeoutMS) throws ResultBackendException, ResultFormatException {
         return resultBackend.getResult(taskID, timeoutMS);
     }
 }
