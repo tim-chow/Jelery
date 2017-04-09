@@ -41,12 +41,12 @@ public class RedisResultBackend implements ResultBackend {
 
     public TaskResultVo getResult(String taskID, int timeoutMS)
             throws ResultBackendException, ResultFormatException {
+        Jedis jedis = null;
         try {
-            Jedis jedis = getJedis();
+            jedis = getJedis();
             return gson.fromJson(jedis.get(taskID), TaskResultVo.class);
         } catch (JedisException ex) {
             ex.printStackTrace();
-            close();
             throw new ResultBackendException(ex.getMessage());
         } catch (JsonSyntaxException ex) {
             ex.printStackTrace();
@@ -54,6 +54,9 @@ public class RedisResultBackend implements ResultBackend {
         } catch (IllegalStateException ex) {
             ex.printStackTrace();
             throw new ResultFormatException(ex.getMessage());
+        } finally {
+            if (jedis != null)
+                jedis.close();
         }
     }
 
@@ -62,12 +65,17 @@ public class RedisResultBackend implements ResultBackend {
         if (taskID == null || taskResult == null)
             return;
 
+        Jedis jedis = null;
         try {
-            Jedis jedis = getJedis();
+            jedis = getJedis();
             jedis.set(taskID, gson.toJson(taskResult));
             jedis.expire(taskID, expireTimeoutMS / 1000);
         } catch (JedisException ex) {
+            ex.printStackTrace();
             throw new ResultBackendException(ex.getMessage());
+        } finally {
+            if (jedis != null)
+                jedis.close();
         }
     }
 

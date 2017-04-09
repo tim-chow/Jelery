@@ -16,7 +16,7 @@ public class MyConfigurable implements Configurable {
     }
 
     public int getResultExpireTimeoutMS() {
-        return 1000000;
+        return 10000;
     }
 
     public String getEncoding() {
@@ -44,11 +44,11 @@ public class MyConfigurable implements Configurable {
     }
 
     private MessageBroker messageBroker = new RabbitMQMessageBroker(
-            "10.125.196.111", 5672, "guest", "guest", "bs-vhost",
+            "127.0.0.1", 5672, "guest", "guest", "bs-vhost",
             "Jelery", "Jelery", "Jelery");
 
     private ResultBackend resultBackend = new RedisResultBackend(
-            "timd.cn", 6379, 10000, "timchow", 0);
+            "127.0.0.1", 6379, getResultBackendSetTimeoutMS(), null, 0);
 
     public MessageBroker getMessageBroker() {
         return messageBroker;

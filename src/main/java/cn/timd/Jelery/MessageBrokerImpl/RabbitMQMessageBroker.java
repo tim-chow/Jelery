@@ -20,12 +20,16 @@ public class RabbitMQMessageBroker implements MessageBroker {
             .create();
 
     private ConnectionFactory factory;
-    private Connection connection;
-    private Channel channel;
-    private QueueingConsumer consumer;
+    private Connection publishConnection;
+    private Channel publishChannel;
     private String exchangeName;
     private String queueName;
     private String routingKey;
+
+    private int qos = 1;
+    private Connection consumeConnection;
+    private Channel consumeChannel;
+    private QueueingConsumer consumer;
 
     public RabbitMQMessageBroker(String host, int port,
                                  String username, String password,
@@ -43,40 +47,64 @@ public class RabbitMQMessageBroker implements MessageBroker {
         this.routingKey = routingKey;
     }
 
-    private synchronized Channel getChannel() throws IOException, TimeoutException {
-        if (channel != null)
-            return channel;
+    public RabbitMQMessageBroker setQos(int qos) {
+        if (qos > 0)
+            this.qos = qos;
+        return this;
+    }
 
-        channel = (connection = factory.newConnection()).createChannel();
-        channel.basicQos(1);
-        channel.exchangeDeclare(exchangeName, "direct", true);
-        channel.queueDeclare(queueName, true, false, false, null);
-        channel.queueBind(queueName, exchangeName, routingKey);
+    private synchronized Channel getPublishChannel()
+            throws IOException, TimeoutException {
+        if (publishChannel != null)
+            return publishChannel;
 
-        consumer = new QueueingConsumer(channel);
-        return channel;
+        publishChannel = (publishConnection = factory.newConnection()).createChannel();
+        publishChannel.exchangeDeclare(exchangeName, "direct", true);
+        publishChannel.queueDeclare(queueName, true, false, false, null);
+        publishChannel.queueBind(queueName, exchangeName, routingKey);
+        return publishChannel;
+    }
+
+    private synchronized Channel getConsumeChannel()
+            throws IOException, TimeoutException {
+        if (consumeChannel != null)
+            return consumeChannel;
+
+        consumeChannel = (consumeConnection = factory.newConnection()).createChannel();
+        consumeChannel.exchangeDeclare(exchangeName, "direct", true);
+        consumeChannel.queueDeclare(queueName, true, false, false, null);
+        consumeChannel.queueBind(queueName, exchangeName, routingKey);
+
+        consumeChannel.basicQos(qos);
+        consumer = new QueueingConsumer(consumeChannel);
+        consumeChannel.basicConsume(queueName, false, consumer);
+        return consumeChannel;
     }
 
     public void sendMessage(TaskMessageVo taskMessage, int timeoutMS) throws MessageBrokerException {
         try {
-            channel = getChannel();
+            publishChannel = getPublishChannel();
             AMQP.BasicProperties properties =
                     new AMQP.BasicProperties.Builder()
                             .contentType("application/json")
                             .deliveryMode(2)
                             .build();
-            channel.txSelect();
+            publishChannel.txSelect();
             try {
-                channel.basicPublish(exchangeName, routingKey,
+                publishChannel.basicPublish(exchangeName, routingKey,
                         properties, gson.toJson(taskMessage).getBytes());
             } catch (IOException ex) {
-                channel.txRollback();
+                publishChannel.txRollback();
                 throw ex;
             }
-            channel.txCommit();
+            publishChannel.txCommit();
         } catch (IOException ex) {
             ex.printStackTrace();
-            channel = null;
+            closePublishConnection();
+            throw new MessageBrokerException(ex.getMessage());
+        } catch (ShutdownSignalException ex) {
+            ex.printStackTrace();
+            closePublishConnection();
             throw new MessageBrokerException(ex.getMessage());
         } catch (TimeoutException ex) {
             ex.printStackTrace();
@@ -86,21 +114,25 @@ public class RabbitMQMessageBroker implements MessageBroker {
 
     public TaskMessageVo getMessage(int timeoutMS)
             throws MessageBrokerException, MessageFormatException {
-        boolean autoAck = true;
         byte[] body;
 
         try {
-            channel = getChannel();
-            channel.basicConsume(queueName, autoAck, consumer);
+            consumeChannel= getConsumeChannel();
             QueueingConsumer.Delivery delivery = consumer.nextDelivery(timeoutMS);
             if (delivery == null)
                 throw new MessageBrokerTimeoutException("timeout");
+            consumeChannel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
             body = delivery.getBody();
         } catch (IOException ex) {
             ex.printStackTrace();
-            channel = null;
+            closeConsumeConnection();
             throw new MessageBrokerException(ex.getMessage());
-        } catch (TimeoutException ex) {
+        } catch (ShutdownSignalException ex) {
+            ex.printStackTrace();
+            closeConsumeConnection();
+            throw new MessageBrokerException(ex.getMessage());
+        }
+        catch (TimeoutException ex) {
             ex.printStackTrace();
             throw new MessageBrokerTimeoutException(ex.getMessage());
         } catch (InterruptedException ex) {
@@ -119,17 +151,36 @@ public class RabbitMQMessageBroker implements MessageBroker {
         }
     }
 
-    public synchronized void close() {
+    private synchronized void closeConsumeConnection() {
         try {
-            if (channel != null)
-                channel.close();
-            if (connection != null)
-                connection.close();
+            if (consumeChannel != null)
+                consumeChannel.close();
+            if (consumeConnection != null)
+                consumeConnection.close();
         } catch (Exception ex) {
             ex.printStackTrace();
         } finally {
-            channel = null;
-            connection = null;
+            consumeChannel = null;
+            consumeConnection = null;
         }
+    }
+
+    private synchronized void closePublishConnection() {
+        try {
+            if (publishChannel != null)
+                publishChannel.close();
+            if (publishConnection != null)
+                publishConnection.close();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        } finally {
+            publishChannel = null;
+            publishConnection = null;
+        }
+    }
+
+    public void close() {
+        closePublishConnection();
+        closeConsumeConnection();
     }
 }
