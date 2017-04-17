@@ -6,6 +6,7 @@ import cn.timd.Jelery.TaskResult.AsyncTaskResult;
 import cn.timd.Jelery.Utilities.ClassPathPackageScanner;
 import cn.timd.Jelery.Vo.TaskMessageVo;
 import cn.timd.Jelery.Vo.TaskResultVo;
+import lombok.extern.slf4j.Slf4j;
 import sun.misc.Signal;
 import sun.misc.SignalHandler;
 
@@ -15,6 +16,7 @@ import java.lang.annotation.Annotation;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+@Slf4j
 public abstract class AbstractTaskBase implements TaskBase {
     private final static Map<String, AbstractTaskBase> taskRecords =
             new ConcurrentHashMap<String, AbstractTaskBase>();
@@ -52,6 +54,7 @@ public abstract class AbstractTaskBase implements TaskBase {
         taskMessageVo.setTaskName(getTaskName());
         taskMessageVo.setEncoding(encoding);
 
+        log.debug("send task: " + taskMessageVo.toString());
         configurable.getMessageBroker().sendMessage(taskMessageVo,
                 configurable.getMessageBrokerSendTimeoutMS());
         return new AsyncTaskResult(taskID, configurable.getResultBackend());
@@ -69,6 +72,7 @@ public abstract class AbstractTaskBase implements TaskBase {
                 ex.printStackTrace();
             }
         }
+        log.debug("classNames; " + classNames.toString());
 
         for (String className: classNames) {
             try {
@@ -86,6 +90,7 @@ public abstract class AbstractTaskBase implements TaskBase {
                         taskName = aClass.getName();
 
                     AbstractTaskBase task = (AbstractTaskBase) aClass.newInstance();
+                    log.debug("register task: " + taskName);
                     register(task, taskName);
                 }
             } catch (ClassFormatError ex) {
@@ -182,15 +187,19 @@ public abstract class AbstractTaskBase implements TaskBase {
         Signal signal = new Signal("INT");
         Signal.handle(signal, new SignalHandler() {
             public void handle(Signal signal) {
+                log.info("receive SIGINT, quiting...");
                 markAsExit();
             }
         });
 
+        log.debug("start to run");
         try {
             // // TODO: 2017/4/1 multi-threads supports here
             realLogic();
         } finally {
+            log.debug("close configurable");
             configurable.close();
         }
+        log.debug("end to run");
     }
 }
